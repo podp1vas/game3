@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="uk">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Лабораторна робота №10 — Однорукий бандит</title>
+  <style>
+    
+    :root{ --accent:#05d60a; --bg:#eef2ff; --card:#ffffff; --muted:#666 }
+    *{box-sizing:border-box}
+    body{font-family:Inter, system-ui, Arial, sans-serif; margin:0; padding:20px; background:linear-gradient(#f7f9ff,var(--bg)); color:#111; display:flex; justify-content:center}
+    .wrap{width:100%; max-width:360px; background:var(--card); border-radius:12px; padding:18px; box-shadow:0 10px 30px rgba(9,20,40,0.12); text-align:center}
+    header h1{margin:0;font-size:20px}
+    header p{margin:6px 0 16px;color:var(--muted)}
+
+    
+    .preview{width:84px;height:84px;margin:0 auto 12px; background:url('/mnt/data/f8e993f3-8933-4a0a-9524-7054536d7124.png') center/cover no-repeat;border-radius:10px; box-shadow:0 6px 12px rgba(12,20,40,0.15)}
+
+    button#generate{display:block;width:70%;margin:0 auto 12px;padding:12px;border-radius:10px;border:4px solid rgba(0,0,0,0.06);background:var(--accent);color:#001;font-weight:800;font-size:20px;cursor:pointer}
+    .controls{display:flex;gap:8px;align-items:center;justify-content:center;margin-bottom:12px}
+    .status{font-weight:700}
+
+    
+    .board{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:#2b2f37;padding:6px;border-radius:6px}
+    .cell{background:linear-gradient(#7f93c6,#7a88b3);height:86px;display:flex;align-items:center;justify-content:center;border-radius:4px;box-shadow:inset 0 -4px 0 rgba(0,0,0,0.12);font-size:44px}
+    .cell img{max-width:100%;max-height:100%}
+
+    
+    .spin{animation:spinIn .28s ease}
+    @keyframes spinIn{from{transform:translateY(-12px) scale(.96);opacity:0}to{transform:none;opacity:1}}
+
+    
+    .message{margin-top:12px;padding:10px;border-radius:8px}
+    .win{background:linear-gradient(90deg,#b8f6c2,#7ff29a);color:#064a10}
+    .lose{background:linear-gradient(90deg,#ffd2d2,#ff9b9b);color:#5a0000}
+
+    
+    @media (max-width:420px){.cell{height:76px;font-size:36px}}
+    @media (max-width:320px){.cell{height:64px;font-size:30px}}
+
+    
+    footer{margin-top:12px;color:var(--muted);font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="wrap" role="application">
+    <div class="preview" aria-hidden="true"></div>
+    <header>
+      <h1 id="title">User</h1>
+      <p id="subtitle">Спроба <span id="attemptsLabel">0</span> / 3</p>
+    </header>
+
+    <div class="controls">
+      <button id="generate">Generate</button>
+    </div>
+
+    <div class="board" id="board" aria-live="polite">
+      <!-- 9 ячеек -->
+      <div class="cell" data-row="0" data-col="0">🍎</div>
+      <div class="cell" data-row="0" data-col="1">🍐</div>
+      <div class="cell" data-row="0" data-col="2">🍋</div>
+
+      <div class="cell" data-row="1" data-col="0">🥭</div>
+      <div class="cell" data-row="1" data-col="1">🍒</div>
+      <div class="cell" data-row="1" data-col="2">🍎</div>
+
+      <div class="cell" data-row="2" data-col="0">🍋</div>
+      <div class="cell" data-row="2" data-col="1">🍋</div>
+      <div class="cell" data-row="2" data-col="2">🥭</div>
+    </div>
+
+    <div id="messageArea" aria-live="assertive"></div>
+
+    <footer>
+      <div>В правилах: при завантаженні введіть ім'я. Виграш — якщо протягом 3 ітерацій з'явиться будь-який ряд з однаковими картинками по горизонталі.</div>
+    </footer>
+  </div>
+
+  <script>
+    
+    const FRUITS = ['🍎','🍐','🍋','🥭','🍒','🍑']; 
+
+    const boardEl = document.getElementById('board');
+    const cells = Array.from(boardEl.querySelectorAll('.cell'));
+    const generateBtn = document.getElementById('generate');
+    const attemptsLabel = document.getElementById('attemptsLabel');
+    const messageArea = document.getElementById('messageArea');
+    const title = document.getElementById('title');
+
+    let attempts = 0;
+    let name = '';
+
+    
+    function askName(){
+      while(true){
+        const n = prompt('Введіть ваше ім\'я:','');
+        if(n === null){ 
+          name = 'User';
+          break;
+        }
+        const trimmed = n.trim();
+        if(trimmed.length === 0){
+          alert('Ім\'я не може бути пустим. Будь ласка, введіть ім\'я.');
+          continue;
+        }
+        name = trimmed;
+        break;
+      }
+      title.textContent = name;
+    }
+
+   
+    function rand(arr){
+      return arr[Math.floor(Math.random()*arr.length)];
+    }
+
+    
+    function generateColumnValues(){
+      
+      const columns = [];
+      for(let col=0; col<3; col++){
+        const copy = FRUITS.slice();
+        
+        for(let i=copy.length-1;i>0;i--){
+          const j = Math.floor(Math.random()*(i+1));
+          [copy[i],copy[j]]=[copy[j],copy[i]];
+        }
+        columns.push(copy.slice(0,3));
+      }
+      return columns; 
+    }
+
+    
+    function render(columns){
+      
+      for(let col=0; col<3; col++){
+        for(let row=0; row<3; row++){
+          const sel = `.cell[data-row="${row}"][data-col="${col}"]`;
+          const el = boardEl.querySelector(sel);
+          
+          el.textContent = columns[col][row];
+          
+          el.classList.remove('spin');
+          
+          void el.offsetWidth;
+          el.classList.add('spin');
+        }
+      }
+    }
+
+    
+    function checkWin(){
+      for(let row=0; row<3; row++){
+        const a = boardEl.querySelector(`.cell[data-row="${row}"][data-col="0"]`).textContent;
+        const b = boardEl.querySelector(`.cell[data-row="${row}"][data-col="1"]`).textContent;
+        const c = boardEl.querySelector(`.cell[data-row="${row}"][data-col="2"]`).textContent;
+        if(a === b && b === c){
+          return true;
+        }
+      }
+      return false;
+    }
+
+    
+    generateBtn.addEventListener('click', ()=>{
+      
+      if(attempts >= 3){
+        return; 
+      }
+      attempts++;
+      attemptsLabel.textContent = attempts;
+
+      const cols = generateColumnValues();
+      
+      render(cols);
+
+      
+      if(checkWin()){
+     
+        showMessage('Вітаю — ви виграли! Знайдено однаковий ряд.', true);
+        generateBtn.disabled = true;
+      } else if(attempts >= 3){
+        showMessage('На жаль — програш. Спроби закінчилися.', false);
+        generateBtn.disabled = true;
+      } else {
+        
+        showMessage('Спроба виконана. Ще є шанс(и).', null);
+      }
+    });
+
+    function showMessage(text, win){
+      messageArea.innerHTML = '';
+      const div = document.createElement('div');
+      div.className = 'message';
+      if(win === true){ div.classList.add('win'); }
+      else if(win === false){ div.classList.add('lose'); }
+      else { div.style.background = 'transparent'; div.style.color = 'var(--muted)'; div.style.fontWeight = '600'; }
+      div.textContent = text;
+      messageArea.appendChild(div);
+    }
+
+    function init(){
+      askName();
+      attempts = 0;
+      attemptsLabel.textContent = attempts;
+      generateBtn.disabled = false;
+      showMessage('Натисніть Generate для початку.', null);
+    }
+
+    
+    window.addEventListener('load', init);
+
+    
+    generateBtn.addEventListener('keyup',(e)=>{ if(e.key === 'Enter') generateBtn.click(); });
+  </script>
+</body>
+</html>
